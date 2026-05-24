@@ -1,0 +1,12 @@
+services:
+  respawn-radio:
+    build: .
+    container_name: respawn-radio
+    restart: unless-stopped
+    env_file: .env
+    networks:
+      - proxy
+
+networks:
+  proxy:
+    external: true
