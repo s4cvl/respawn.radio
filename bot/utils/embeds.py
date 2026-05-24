@@ -19,7 +19,6 @@ COLOR_ERROR = 0xED4245
 COLOR_INFO = 0x5865F2
 
 BOT_NAME = "Respawn Radio"
-BOT_ICON_URL = ""  # à remplir si avatar custom hébergé
 
 
 def _base(color: int, title: str | None = None, description: str | None = None) -> discord.Embed:
@@ -142,6 +141,114 @@ def queue(player: "GuildPlayer", page: int = 1, per_page: int = 10) -> discord.E
             f"{len(items)} piste(s) • Durée totale : {format_duration(total_duration)}"
         )
     )
+    return embed
+
+
+def skip_summary(player: "GuildPlayer", *, skipped: "Track | None" = None) -> discord.Embed:
+    """Affiché après un skip : nouvelle piste + 10 prochaines."""
+    if player.current is None:
+        embed = _base(
+            COLOR_ACCENT,
+            title="⏭️ Skip",
+            description="*Plus rien dans la queue.*",
+        )
+        if skipped:
+            embed.set_footer(text=f"{BOT_NAME} • Skip : {truncate(skipped.title, 80)}")
+        return embed
+
+    track = player.current
+    elapsed = player.elapsed_seconds()
+    bar = progress_bar(elapsed, track.duration or 0)
+    embed = _base(
+        COLOR_ACCENT,
+        title="⏭️ Currently playing",
+        description=f"**[{truncate(track.title, 90)}]({track.url})**",
+    )
+    embed.add_field(
+        name="Progression",
+        value=f"`{format_duration(elapsed)}` {bar} `{format_duration(track.duration)}`",
+        inline=False,
+    )
+    if track.requester:
+        embed.add_field(name="Demandé par", value=track.requester, inline=True)
+
+    if player.queue:
+        lines = []
+        for idx, t in enumerate(player.queue[:10], start=1):
+            lines.append(
+                f"`{idx:>2}.` [{truncate(t.title, 55)}]({t.url}) `{format_duration(t.duration)}`"
+            )
+        more = len(player.queue) - 10
+        if more > 0:
+            lines.append(f"*… + {more} autres pistes*")
+        embed.add_field(name="🗒️ À venir", value="\n".join(lines), inline=False)
+
+    if track.thumbnail:
+        embed.set_thumbnail(url=track.thumbnail)
+
+    if skipped:
+        embed.set_footer(text=f"{BOT_NAME} • Skip : {truncate(skipped.title, 80)}")
+    return embed
+
+
+def panel(player: "GuildPlayer") -> discord.Embed:
+    """Panneau de contrôle persistant (commande !setup).
+
+    Inclut now playing, barre de progression, queue résumée et statut des modes.
+    """
+    if player.current is None:
+        embed = _base(
+            COLOR_ACCENT,
+            title="🎛️ Respawn Radio — Panneau de contrôle",
+            description="*Aucune piste en lecture.*\n\nUtilise `!play <url|nom>` pour démarrer.",
+        )
+    else:
+        track = player.current
+        elapsed = player.elapsed_seconds()
+        bar = progress_bar(elapsed, track.duration or 0)
+        embed = _base(
+            COLOR_ACCENT,
+            title="🎛️ Respawn Radio — En lecture",
+            description=f"**[{truncate(track.title, 90)}]({track.url})**",
+        )
+        embed.add_field(
+            name="Progression",
+            value=f"`{format_duration(elapsed)}` {bar} `{format_duration(track.duration)}`",
+            inline=False,
+        )
+        info_lines = []
+        if track.uploader:
+            info_lines.append(f"**Artiste / Chaîne :** {track.uploader}")
+        if track.requester:
+            info_lines.append(f"**Demandé par :** {track.requester}")
+        if info_lines:
+            embed.add_field(name="​", value="\n".join(info_lines), inline=False)
+        if track.thumbnail:
+            embed.set_thumbnail(url=track.thumbnail)
+
+    if player.queue:
+        lines = []
+        for idx, t in enumerate(player.queue[:10], start=1):
+            lines.append(
+                f"`{idx:>2}.` {truncate(t.title, 55)} `{format_duration(t.duration)}`"
+            )
+        more = len(player.queue) - 10
+        if more > 0:
+            lines.append(f"*… + {more} autres pistes*")
+        embed.add_field(name="🗒️ Queue", value="\n".join(lines), inline=False)
+    else:
+        embed.add_field(name="🗒️ Queue", value="*(vide)*", inline=False)
+
+    flags = []
+    if player.loop:
+        flags.append("🔂 Loop")
+    if player.loop_queue:
+        flags.append("🔁 LoopQueue")
+    flags.append(f"🔊 {int(player.volume * 100)}%")
+    paused = bool(player.voice_client and player.voice_client.is_paused())
+    if paused:
+        flags.append("⏸ Pause")
+    embed.set_footer(text=f"{BOT_NAME} • " + " • ".join(flags))
     return embed
 
 

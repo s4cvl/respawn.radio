@@ -45,5 +45,5 @@ class Admin(commands.Cog):
 
 
 def setup(bot: commands.Bot) -> None:
-    # Pycord : add_cog est synchrone (pas await)
+    """Entrypoint du cog (Pycord : add_cog est synchrone)."""
     bot.add_cog(Admin(bot))

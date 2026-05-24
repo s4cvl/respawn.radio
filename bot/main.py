@@ -11,6 +11,8 @@ import discord
 from discord.ext import commands
 from dotenv import load_dotenv
 
+from bot.utils.help_command import RespawnHelp
+
 # --- Configuration ---
 
 load_dotenv()
@@ -32,7 +34,6 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
 )
-# Le logger discord.py est très verbeux en DEBUG, on le passe à WARNING par défaut
 logging.getLogger("discord").setLevel(logging.WARNING)
 log = logging.getLogger("respawn-radio")
 
@@ -45,19 +46,23 @@ def build_bot() -> commands.Bot:
     intents.message_content = True  # PRIVILEGED — à activer dans le Dev Portal
     intents.voice_states = True
     intents.guilds = True
-    # NB: pas besoin de `members` (privileged). Les membres du salon vocal du bot
+    # Pas besoin de `members` (privileged). Les membres du salon vocal du bot
     # sont remplis via les events voice_state_update.
 
     bot = commands.Bot(
         command_prefix=COMMAND_PREFIX,
         intents=intents,
-        help_command=commands.DefaultHelpCommand(no_category="Commandes"),
+        help_command=RespawnHelp(),
         description="Respawn Radio — music bot maison.",
     )
 
     @bot.event
     async def on_ready() -> None:
-        log.info("Connecté en tant que %s (id=%s)", bot.user, bot.user.id if bot.user else "?")
+        log.info(
+            "Connecté en tant que %s (id=%s)",
+            bot.user,
+            bot.user.id if bot.user else "?",
+        )
         log.info("Préfixe : %s • Guilds : %d", COMMAND_PREFIX, len(bot.guilds))
         try:
             await bot.change_presence(
@@ -73,8 +78,6 @@ def build_bot() -> commands.Bot:
     async def on_command_error(
         ctx: commands.Context, error: commands.CommandError
     ) -> None:
-        # Les erreurs des commandes du cog Music sont gérées dans cog_command_error.
-        # On gère ici les erreurs « globales ».
         if isinstance(error, commands.CommandNotFound):
             return
         if isinstance(error, commands.NotOwner):

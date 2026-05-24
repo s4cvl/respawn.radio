@@ -10,6 +10,7 @@ import aiohttp
 import discord
 from discord.ext import commands
 
+from bot.core.panel import MusicPanel
 from bot.core.player import PlayerRegistry
 from bot.core.resolver import Resolver
 from bot.core.spotify import SpotifyClient
@@ -229,10 +230,38 @@ class Music(commands.Cog):
     @commands.command(name="skip", aliases=["s", "next"])
     async def skip(self, ctx: commands.Context) -> None:
         player = self.players.get_existing(ctx.guild.id)
-        if player and player.skip():
-            await ctx.send(embed=embeds.success("⏭️ Skip."))
-        else:
+        if not player or not player.skip():
             await ctx.send(embed=embeds.error("Rien à skipper."))
+            return
+        skipped = player.current  # snapshot avant changement (peut déjà être None)
+        # Attend que la piste suivante soit prête (résolution lazy Spotify possible)
+        await self._wait_for_track_change(player, previous=skipped, timeout=6.0)
+        await ctx.send(embed=embeds.skip_summary(player, skipped=skipped))
+
+    async def _wait_for_track_change(
+        self,
+        player,
+        *,
+        previous,
+        timeout: float = 5.0,
+    ) -> None:
+        """Attend que `player.current` change (ou que la queue se vide)."""
+        import time
+
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            await asyncio.sleep(0.15)
+            current = player.current
+            if current is not None and current is not previous:
+                return
+            # Si plus rien à jouer et pas en boucle → on s'arrête
+            if (
+                current is None
+                and not player.queue
+                and not player.loop
+                and not player.loop_queue
+            ):
+                return
 
     @commands.command(name="skipto")
     async def skipto(self, ctx: commands.Context, position: int) -> None:
@@ -449,6 +478,48 @@ class Music(commands.Cog):
             return
         player.set_volume(value)
         await ctx.send(embed=embeds.success(f"🔊 Volume réglé à **{value}%**."))
+
+    # ==================================================================
+    # Panneau persistant (!setup / !unsetup)
+    # ==================================================================
+
+    @commands.command(name="setup")
+    async def setup_panel(self, ctx: commands.Context) -> None:
+        """Installe le panneau de contrôle persistant dans ce channel."""
+        player = self.players.get(ctx.guild)
+        # Nettoie un ancien panneau si existant
+        if player.panel is not None:
+            await player.panel.remove()
+            player.panel = None
+
+        panel = MusicPanel(player, ctx.channel, self.bot)
+        try:
+            await panel.install()
+        except discord.Forbidden:
+            await ctx.send(
+                embed=embeds.error(
+                    "Permissions insuffisantes dans ce salon "
+                    "(il me faut Envoyer + Embed + Lire l'historique)."
+                )
+            )
+            return
+        except Exception as exc:
+            log.exception("setup panel KO")
+            await ctx.send(embed=embeds.error(f"Installation panneau KO : {exc}"))
+            return
+        player.panel = panel
+        await ctx.message.add_reaction("🎛️")
+
+    @commands.command(name="unsetup")
+    async def unsetup_panel(self, ctx: commands.Context) -> None:
+        """Retire le panneau de contrôle persistant."""
+        player = self.players.get_existing(ctx.guild.id)
+        if player is None or player.panel is None:
+            await ctx.send(embed=embeds.error("Pas de panneau actif."))
+            return
+        await player.panel.remove()
+        player.panel = None
+        await ctx.send(embed=embeds.success("Panneau retiré."))
 
     # ==================================================================
     # Listeners

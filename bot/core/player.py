@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import discord
@@ -13,7 +13,7 @@ import discord
 from .resolver import FFMPEG_BEFORE_OPTS, FFMPEG_OPTS, Resolver
 
 if TYPE_CHECKING:
-    pass
+    from .panel import MusicPanel
 
 log = logging.getLogger(__name__)
 
@@ -61,11 +61,12 @@ class GuildPlayer:
 
         self.voice_client: discord.VoiceClient | None = None
         self.text_channel: discord.TextChannel | None = None  # pour annonces auto
+        self.panel: "MusicPanel | None" = None  # panneau persistant optionnel
 
         self._play_next_event = asyncio.Event()
         self._player_task: asyncio.Task | None = None
         self._auto_leave_task: asyncio.Task | None = None
-        self._started_at: float | None = None  # epoch début lecture
+        self._started_at: float | None = None
         self._paused_at: float | None = None
         self._paused_total: float = 0.0
 
@@ -161,7 +162,7 @@ class GuildPlayer:
         if self.voice_client and (
             self.voice_client.is_playing() or self.voice_client.is_paused()
         ):
-            self.voice_client.stop()  # déclenche _after → play next
+            self.voice_client.stop()
             return True
         return False
 
@@ -198,16 +199,13 @@ class GuildPlayer:
             while True:
                 self._play_next_event.clear()
 
-                # Choix de la prochaine piste
                 next_track = self._choose_next()
                 if next_track is None:
-                    # Plus rien à jouer — on attend qu'un !play réveille la boucle
                     await self._play_next_event.wait()
                     continue
 
                 self.current = next_track
 
-                # Résolution lazy si besoin (Spotify, flat playlist YouTube)
                 if next_track.lazy or not next_track.stream_url:
                     ok = await self.resolver.resolve_stream(next_track)
                     if not ok:
@@ -215,7 +213,6 @@ class GuildPlayer:
                         self.current = None
                         continue
 
-                # Lecture
                 if not self.voice_client or not self.voice_client.is_connected():
                     log.warning("voice_client perdu en cours de lecture — arrêt boucle.")
                     return
@@ -244,10 +241,14 @@ class GuildPlayer:
                     ),
                 )
 
-                # Attend la fin de la piste
+                # Notifie le panneau (nouvelle piste)
+                await self._notify_panel()
+
                 await self._play_next_event.wait()
                 self.current = None
                 self._started_at = None
+                # Notifie le panneau (piste terminée)
+                await self._notify_panel()
         except asyncio.CancelledError:
             log.debug("Player loop cancelled for guild %s", self.guild.id)
             raise
@@ -259,13 +260,9 @@ class GuildPlayer:
         if self.loop and self.current is not None:
             return self.current
         if not self.queue:
-            if self.loop_queue and self.current is not None:
-                # On a fini la queue, on remet la current si loop_queue ? non, on l'a déjà jouée
-                return None
             return None
         track = self.queue.pop(0)
         if self.loop_queue and self.current is not None:
-            # On remet l'ancienne current en fin de queue
             self.queue.append(self.current)
         return track
 
@@ -277,6 +274,15 @@ class GuildPlayer:
     def notify_play(self) -> None:
         """À appeler après un enqueue pour réveiller la boucle si elle dort."""
         self._play_next_event.set()
+
+    async def _notify_panel(self) -> None:
+        """Demande un refresh immédiat du panneau (no-op si pas de panneau)."""
+        if self.panel is None:
+            return
+        try:
+            await self.panel.refresh()
+        except Exception as exc:
+            log.warning("notify_panel KO : %s", exc)
 
     # ------------------------------------------------------------------
     # Auto-leave
