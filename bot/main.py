@@ -95,19 +95,22 @@ async def _main() -> None:
 
     bot = build_bot()
 
-    async with bot:
-        for cog in INITIAL_COGS:
-            try:
-                await bot.load_extension(cog)
-                log.info("Cog chargé : %s", cog)
-            except Exception as exc:
-                log.exception("Échec chargement cog %s : %s", cog, exc)
-                sys.exit(1)
-
+    # Pycord : load_extension est synchrone (pas await)
+    for cog in INITIAL_COGS:
         try:
-            await bot.start(DISCORD_TOKEN)
-        except KeyboardInterrupt:
-            log.info("Interruption clavier — arrêt.")
+            bot.load_extension(cog)
+            log.info("Cog chargé : %s", cog)
+        except Exception as exc:
+            log.exception("Échec chargement cog %s : %s", cog, exc)
+            sys.exit(1)
+
+    try:
+        await bot.start(DISCORD_TOKEN)
+    except KeyboardInterrupt:
+        log.info("Interruption clavier — arrêt.")
+    finally:
+        if not bot.is_closed():
+            await bot.close()
 
 
 def main() -> None:

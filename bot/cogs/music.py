@@ -538,5 +538,6 @@ def _split_lyrics(text: str, chunk_size: int) -> list[str]:
     return chunks
 
 
-async def setup(bot: commands.Bot) -> None:
-    await bot.add_cog(Music(bot))
+def setup(bot: commands.Bot) -> None:
+    # Pycord : add_cog est synchrone (pas await)
+    bot.add_cog(Music(bot))

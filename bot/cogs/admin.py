@@ -29,7 +29,8 @@ class Admin(commands.Cog):
     async def reload(self, ctx: commands.Context, extension: str) -> None:
         """Recharge un cog. Ex : `!reload bot.cogs.music`."""
         try:
-            await self.bot.reload_extension(extension)
+            # Pycord : reload_extension est synchrone
+            self.bot.reload_extension(extension)
         except Exception as exc:
             await ctx.send(embed=embeds.error(f"Reload KO : `{exc}`"))
             return
@@ -43,5 +44,6 @@ class Admin(commands.Cog):
         await self.bot.close()
 
 
-async def setup(bot: commands.Bot) -> None:
-    await bot.add_cog(Admin(bot))
+def setup(bot: commands.Bot) -> None:
+    # Pycord : add_cog est synchrone (pas await)
+    bot.add_cog(Admin(bot))
