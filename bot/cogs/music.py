@@ -64,8 +64,12 @@ class Music(commands.Cog):
 
         if vc is None or not vc.is_connected():
             try:
-                vc = await target.connect(self_deaf=True)
+                vc = await target.connect()
+                # Pycord : self_deaf ne passe pas dans connect(),
+                # on le fait via change_voice_state après coup.
+                await ctx.guild.change_voice_state(channel=target, self_deaf=True)
             except Exception as exc:
+                log.exception("Connexion vocal KO sur %s", target)
                 await ctx.send(embed=embeds.error(f"Connexion au vocal impossible : {exc}"))
                 return False
 
