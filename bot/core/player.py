@@ -18,15 +18,12 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 AUTO_LEAVE_DELAY = 5 * 60
+WATCHDOG_INTERVAL = 5.0  # check toutes les 5s si voice_client tourne encore
 
 
 @dataclass(slots=True)
 class Track:
-    """Une piste dans la queue.
-
-    `lazy=True` signifie que `stream_url` n'est pas encore résolu (cas Spotify
-    ou extraction flat de playlist YouTube). Le resolver remplit juste avant lecture.
-    """
+    """Une piste dans la queue."""
 
     title: str
     url: str
@@ -61,8 +58,6 @@ class GuildPlayer:
         self.voice_client: discord.VoiceClient | None = None
         self.text_channel: discord.TextChannel | None = None
         self.panel: "MusicPanel | None" = None
-        # Channel "music-only" géré par le panneau. Si set, les messages dans
-        # ce channel sont auto-supprimés (replies bot + commandes users).
         self.panel_channel_id: int | None = None
 
         self._play_next_event = asyncio.Event()
@@ -158,6 +153,8 @@ class GuildPlayer:
         if self.voice_client and (
             self.voice_client.is_playing() or self.voice_client.is_paused()
         ):
+            # En mode loop, le skip doit gagner contre la boucle
+            self.loop = False
             self.voice_client.stop()
             return True
         return False
@@ -176,24 +173,41 @@ class GuildPlayer:
                 src.volume = self.volume
 
     def elapsed_seconds(self) -> float:
+        """Temps écoulé sur la piste courante, cappé par la durée si connue."""
         if self._started_at is None:
             return 0.0
         now = time.monotonic()
         if self._paused_at:
-            return self._paused_at - self._started_at - self._paused_total
-        return now - self._started_at - self._paused_total
+            elapsed = self._paused_at - self._started_at - self._paused_total
+        else:
+            elapsed = now - self._started_at - self._paused_total
+        elapsed = max(0.0, elapsed)
+        # Cap visuel : ne jamais afficher plus que la durée connue.
+        if self.current is not None and self.current.duration:
+            elapsed = min(elapsed, float(self.current.duration))
+        return elapsed
 
     # ------------------------------------------------------------------
     # Boucle de lecture
     # ------------------------------------------------------------------
 
     async def _player_loop(self) -> None:
+        """Tâche async qui consomme la queue piste par piste.
+
+        IMPORTANT : `self.current` n'est pas reset à la fin d'une piste — c'est
+        `_pick_next_track` qui décide de la garder (loop), la remettre en fin
+        de queue (loop_queue) ou la jeter.
+        """
         try:
             while True:
                 self._play_next_event.clear()
 
-                next_track = self._choose_next()
+                next_track = self._pick_next_track()
                 if next_track is None:
+                    # Rien à jouer — on attend qu'un enqueue + notify_play réveille
+                    self.current = None
+                    self._started_at = None
+                    await self._notify_panel()
                     await self._play_next_event.wait()
                     continue
 
@@ -203,7 +217,12 @@ class GuildPlayer:
                     ok = await self.resolver.resolve_stream(next_track)
                     if not ok:
                         await self._announce_skip(next_track, reason="track indisponible")
-                        self.current = None
+                        # On laisse `current` set au track foiré, _pick_next_track
+                        # passera au suivant (loop/loop_queue désactivés ou non).
+                        # Pour éviter une boucle infinie avec loop=True sur une
+                        # track foirée : force désactivation.
+                        if self.loop:
+                            self.loop = False
                         continue
 
                 if not self.voice_client or not self.voice_client.is_connected():
@@ -220,24 +239,37 @@ class GuildPlayer:
                 except Exception as exc:
                     log.exception("Création source FFmpeg KO : %s", exc)
                     await self._announce_skip(next_track, reason="erreur audio")
-                    self.current = None
+                    if self.loop:
+                        self.loop = False
                     continue
 
                 self._started_at = time.monotonic()
                 self._paused_at = None
                 self._paused_total = 0.0
 
-                self.voice_client.play(
-                    source,
-                    after=lambda err: self.bot.loop.call_soon_threadsafe(
-                        self._on_track_finished, err
-                    ),
-                )
+                try:
+                    self.voice_client.play(
+                        source,
+                        after=lambda err: self.bot.loop.call_soon_threadsafe(
+                            self._on_track_finished, err
+                        ),
+                    )
+                except discord.ClientException as exc:
+                    # Déjà en train de jouer ? Stop puis retry à la prochaine itération.
+                    log.warning("voice_client.play() refusé : %s — on force stop.", exc)
+                    try:
+                        self.voice_client.stop()
+                    except Exception:
+                        pass
+                    continue
 
                 await self._notify_panel()
 
-                await self._play_next_event.wait()
-                self.current = None
+                # Attente fin de piste avec watchdog : si après 5s sans event
+                # voice_client n'est plus actif, on déclenche l'event manuellement
+                # (sécurité contre un after qui ne tire pas).
+                await self._wait_track_end_with_watchdog()
+
                 self._started_at = None
                 await self._notify_panel()
         except asyncio.CancelledError:
@@ -246,15 +278,44 @@ class GuildPlayer:
         except Exception as exc:
             log.exception("Erreur fatale dans player_loop : %s", exc)
 
-    def _choose_next(self) -> Track | None:
+    async def _wait_track_end_with_watchdog(self) -> None:
+        """Attend `_play_next_event` mais poll voice_client pour gérer un after KO."""
+        while not self._play_next_event.is_set():
+            try:
+                await asyncio.wait_for(
+                    self._play_next_event.wait(), timeout=WATCHDOG_INTERVAL
+                )
+                return
+            except asyncio.TimeoutError:
+                vc = self.voice_client
+                if vc is None or not vc.is_connected():
+                    log.warning("Watchdog : voice_client déconnecté, sortie forcée.")
+                    return
+                if not vc.is_playing() and not vc.is_paused():
+                    log.warning(
+                        "Watchdog : voice_client inactif sans after — fin forcée."
+                    )
+                    self._play_next_event.set()
+                    return
+
+    def _pick_next_track(self) -> Track | None:
+        """Choisit la piste suivante en respectant loop / loop_queue.
+
+        Appelé au début de chaque itération de _player_loop, donc :
+        - `self.current` est la piste qui vient de finir (ou None au démarrage)
+        - On décide : loop la même, remettre en queue, ou prendre la suivante
+        """
+        # Loop track : on rejoue la même
         if self.loop and self.current is not None:
             return self.current
-        if not self.queue:
-            return None
-        track = self.queue.pop(0)
+
+        # Loop queue : la piste qui vient de finir part en fin de queue
         if self.loop_queue and self.current is not None:
             self.queue.append(self.current)
-        return track
+
+        if not self.queue:
+            return None
+        return self.queue.pop(0)
 
     def _on_track_finished(self, error: Exception | None) -> None:
         if error:
@@ -262,7 +323,13 @@ class GuildPlayer:
         self._play_next_event.set()
 
     def notify_play(self) -> None:
-        self._play_next_event.set()
+        """À appeler après un enqueue.
+
+        Réveille la boucle UNIQUEMENT si elle attend (pas de piste en cours).
+        Si une piste joue, la nouvelle entrée sera prise en fin de piste courante.
+        """
+        if self.current is None:
+            self._play_next_event.set()
 
     async def _notify_panel(self) -> None:
         if self.panel is None:
