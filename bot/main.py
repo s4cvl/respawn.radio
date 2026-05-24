@@ -42,10 +42,11 @@ log = logging.getLogger("respawn-radio")
 
 def build_bot() -> commands.Bot:
     intents = discord.Intents.default()
-    intents.message_content = True  # nécessaire pour les commandes préfixe
+    intents.message_content = True  # PRIVILEGED — à activer dans le Dev Portal
     intents.voice_states = True
     intents.guilds = True
-    intents.members = True  # pour récupérer les membres du vocal (auto-leave)
+    # NB: pas besoin de `members` (privileged). Les membres du salon vocal du bot
+    # sont remplis via les events voice_state_update.
 
     bot = commands.Bot(
         command_prefix=COMMAND_PREFIX,

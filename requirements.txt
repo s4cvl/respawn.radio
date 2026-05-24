@@ -1,4 +1,6 @@
-discord.py>=2.3.0
+# discord.py < 2.5 : les versions plus récentes exigent la lib Rust "davey"
+# pour le vocal, qu'on n'utilise pas (on reste sur PyNaCl + FFmpeg classiques).
+discord.py>=2.3.0,<2.5.0
 yt-dlp>=2024.1.0
 spotipy>=2.23.0
 python-dotenv>=1.0.0
