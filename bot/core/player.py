@@ -17,7 +17,6 @@ if TYPE_CHECKING:
 
 log = logging.getLogger(__name__)
 
-# Délai d'auto-leave si le bot est seul dans le vocal (secondes)
 AUTO_LEAVE_DELAY = 5 * 60
 
 
@@ -25,8 +24,8 @@ AUTO_LEAVE_DELAY = 5 * 60
 class Track:
     """Une piste dans la queue.
 
-    `lazy=True` signifie que `stream_url` n'est pas encore résolu (cas Spotify ou
-    extraction flat de playlist YouTube). Le resolver remplira juste avant lecture.
+    `lazy=True` signifie que `stream_url` n'est pas encore résolu (cas Spotify
+    ou extraction flat de playlist YouTube). Le resolver remplit juste avant lecture.
     """
 
     title: str
@@ -36,7 +35,7 @@ class Track:
     uploader: str | None = None
     thumbnail: str | None = None
     requester: str | None = None
-    search_query: str | None = None  # utilisé si lazy=True
+    search_query: str | None = None
     lazy: bool = False
 
 
@@ -57,11 +56,14 @@ class GuildPlayer:
         self.current: Track | None = None
         self.loop: bool = False
         self.loop_queue: bool = False
-        self.volume: float = 0.5  # 0.0 → 1.0
+        self.volume: float = 0.5
 
         self.voice_client: discord.VoiceClient | None = None
-        self.text_channel: discord.TextChannel | None = None  # pour annonces auto
-        self.panel: "MusicPanel | None" = None  # panneau persistant optionnel
+        self.text_channel: discord.TextChannel | None = None
+        self.panel: "MusicPanel | None" = None
+        # Channel "music-only" géré par le panneau. Si set, les messages dans
+        # ce channel sont auto-supprimés (replies bot + commandes users).
+        self.panel_channel_id: int | None = None
 
         self._play_next_event = asyncio.Event()
         self._player_task: asyncio.Task | None = None
@@ -75,12 +77,10 @@ class GuildPlayer:
     # ------------------------------------------------------------------
 
     def start(self) -> None:
-        """Démarre la boucle de lecture si pas déjà active."""
         if self._player_task is None or self._player_task.done():
             self._player_task = self.bot.loop.create_task(self._player_loop())
 
     async def stop(self) -> None:
-        """Arrête la lecture et vide la queue (le bot reste connecté)."""
         self.queue.clear()
         self.loop = False
         self.loop_queue = False
@@ -90,7 +90,6 @@ class GuildPlayer:
         self._started_at = None
 
     async def disconnect(self) -> None:
-        """Quitte le salon vocal et nettoie l'état."""
         await self.stop()
         if self._player_task and not self._player_task.done():
             self._player_task.cancel()
@@ -108,7 +107,6 @@ class GuildPlayer:
     # ------------------------------------------------------------------
 
     def enqueue(self, track: Track) -> int:
-        """Ajoute une piste, retourne sa position 1-indexed dans la queue."""
         self.queue.append(track)
         return len(self.queue)
 
@@ -116,14 +114,12 @@ class GuildPlayer:
         self.queue.extend(tracks)
 
     def remove_at(self, position: int) -> Track | None:
-        """`position` 1-indexed."""
         idx = position - 1
         if 0 <= idx < len(self.queue):
             return self.queue.pop(idx)
         return None
 
     def move(self, src: int, dst: int) -> bool:
-        """Déplace une piste de la position src vers dst (1-indexed)."""
         if not (1 <= src <= len(self.queue)) or not (1 <= dst <= len(self.queue)):
             return False
         track = self.queue.pop(src - 1)
@@ -167,14 +163,12 @@ class GuildPlayer:
         return False
 
     def skip_to(self, position: int) -> bool:
-        """Saute directement à la position N dans la queue (drop ce qui précède)."""
         if not (1 <= position <= len(self.queue)):
             return False
         del self.queue[: position - 1]
         return self.skip()
 
     def set_volume(self, value: int) -> None:
-        """`value` entre 0 et 100."""
         self.volume = max(0, min(100, value)) / 100.0
         if self.voice_client and self.voice_client.source:
             src = self.voice_client.source
@@ -194,7 +188,6 @@ class GuildPlayer:
     # ------------------------------------------------------------------
 
     async def _player_loop(self) -> None:
-        """Tâche async qui consomme la queue piste par piste."""
         try:
             while True:
                 self._play_next_event.clear()
@@ -241,13 +234,11 @@ class GuildPlayer:
                     ),
                 )
 
-                # Notifie le panneau (nouvelle piste)
                 await self._notify_panel()
 
                 await self._play_next_event.wait()
                 self.current = None
                 self._started_at = None
-                # Notifie le panneau (piste terminée)
                 await self._notify_panel()
         except asyncio.CancelledError:
             log.debug("Player loop cancelled for guild %s", self.guild.id)
@@ -256,7 +247,6 @@ class GuildPlayer:
             log.exception("Erreur fatale dans player_loop : %s", exc)
 
     def _choose_next(self) -> Track | None:
-        """Sélectionne la prochaine piste selon les modes loop / loop_queue."""
         if self.loop and self.current is not None:
             return self.current
         if not self.queue:
@@ -272,11 +262,9 @@ class GuildPlayer:
         self._play_next_event.set()
 
     def notify_play(self) -> None:
-        """À appeler après un enqueue pour réveiller la boucle si elle dort."""
         self._play_next_event.set()
 
     async def _notify_panel(self) -> None:
-        """Demande un refresh immédiat du panneau (no-op si pas de panneau)."""
         if self.panel is None:
             return
         try:
@@ -289,7 +277,6 @@ class GuildPlayer:
     # ------------------------------------------------------------------
 
     def schedule_auto_leave_check(self) -> None:
-        """Lance un check d'auto-leave (à appeler après un voice_state_update)."""
         if self._auto_leave_task and not self._auto_leave_task.done():
             return
         self._auto_leave_task = self.bot.loop.create_task(self._auto_leave_loop())
@@ -341,8 +328,6 @@ class GuildPlayer:
 
 
 class PlayerRegistry:
-    """Stocke un GuildPlayer par guild."""
-
     def __init__(self, bot: discord.Client, resolver: Resolver) -> None:
         self.bot = bot
         self.resolver = resolver

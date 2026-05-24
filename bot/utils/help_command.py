@@ -15,7 +15,7 @@ HELP_GROUPS: dict[str, list[str]] = {
     "🗒️ Queue": ["queue", "remove", "clear", "shuffle", "move"],
     "🔁 Modes": ["loop", "loopqueue", "volume"],
     "🎙️ Vocal": ["join", "leave"],
-    "📜 Infos": ["nowplaying", "lyrics"],
+    "📜 Infos": ["nowplaying"],
     "🎛️ Panneau": ["setup", "unsetup"],
     "⚙️ Admin": ["ping", "reload", "shutdown"],
 }
