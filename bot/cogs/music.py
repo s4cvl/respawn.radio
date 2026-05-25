@@ -203,6 +203,7 @@ class Music(commands.Cog):
 
     @commands.command(name="pause")
     async def pause(self, ctx: commands.Context) -> None:
+        """Met la lecture en pause."""
         player = self.players.get_existing(ctx.guild.id)
         if player and player.pause():
             await ctx.send(embed=embeds.success("⏸️ En pause."))
@@ -211,6 +212,7 @@ class Music(commands.Cog):
 
     @commands.command(name="resume")
     async def resume(self, ctx: commands.Context) -> None:
+        """Reprend la lecture après une pause."""
         player = self.players.get_existing(ctx.guild.id)
         if player and player.resume():
             await ctx.send(embed=embeds.success("▶️ Reprise."))
@@ -219,6 +221,7 @@ class Music(commands.Cog):
 
     @commands.command(name="stop")
     async def stop(self, ctx: commands.Context) -> None:
+        """Arrête la lecture et vide la queue."""
         player = self.players.get_existing(ctx.guild.id)
         if player is None:
             await ctx.send(embed=embeds.error("Rien en lecture."))
@@ -228,6 +231,7 @@ class Music(commands.Cog):
 
     @commands.command(name="skip", aliases=["s", "next"])
     async def skip(self, ctx: commands.Context) -> None:
+        """Passe à la piste suivante."""
         player = self.players.get_existing(ctx.guild.id)
         if not player or not player.skip():
             await ctx.send(embed=embeds.error("Rien à skipper."))
@@ -259,6 +263,7 @@ class Music(commands.Cog):
 
     @commands.command(name="skipto")
     async def skipto(self, ctx: commands.Context, position: int) -> None:
+        """Saute directement à la piste #N de la queue. Ex : `!skipto 5`."""
         player = self.players.get_existing(ctx.guild.id)
         if player is None:
             await ctx.send(embed=embeds.error("Rien en lecture."))
@@ -274,6 +279,7 @@ class Music(commands.Cog):
 
     @commands.command(name="queue", aliases=["q"])
     async def queue_cmd(self, ctx: commands.Context, page: int = 1) -> None:
+        """Affiche la queue (10 pistes par page). Navigation via ◀️ ▶️."""
         player = self.players.get_existing(ctx.guild.id)
         if player is None:
             await ctx.send(embed=embeds.info("Queue vide."))
@@ -324,6 +330,7 @@ class Music(commands.Cog):
 
     @commands.command(name="remove", aliases=["rm"])
     async def remove(self, ctx: commands.Context, position: int) -> None:
+        """Retire la piste #N de la queue. Ex : `!remove 3`."""
         player = self.players.get_existing(ctx.guild.id)
         if player is None:
             await ctx.send(embed=embeds.error("Queue vide."))
@@ -336,6 +343,7 @@ class Music(commands.Cog):
 
     @commands.command(name="clear")
     async def clear_cmd(self, ctx: commands.Context) -> None:
+        """Vide la queue sans arrêter la piste en cours."""
         player = self.players.get_existing(ctx.guild.id)
         if player is None or not player.queue:
             await ctx.send(embed=embeds.info("Queue déjà vide."))
@@ -346,6 +354,7 @@ class Music(commands.Cog):
 
     @commands.command(name="shuffle")
     async def shuffle_cmd(self, ctx: commands.Context) -> None:
+        """Mélange aléatoirement l'ordre de la queue."""
         player = self.players.get_existing(ctx.guild.id)
         if player is None or len(player.queue) < 2:
             await ctx.send(embed=embeds.error("Pas assez de pistes pour mélanger."))
@@ -355,6 +364,7 @@ class Music(commands.Cog):
 
     @commands.command(name="move")
     async def move_cmd(self, ctx: commands.Context, src: int, dst: int) -> None:
+        """Déplace la piste #src vers la position #dst. Ex : `!move 5 1`."""
         player = self.players.get_existing(ctx.guild.id)
         if player is None or not player.queue:
             await ctx.send(embed=embeds.error("Queue vide."))
@@ -371,6 +381,7 @@ class Music(commands.Cog):
 
     @commands.command(name="nowplaying", aliases=["np", "current"])
     async def nowplaying(self, ctx: commands.Context) -> None:
+        """Affiche la piste en cours avec barre de progression."""
         player = self.players.get_existing(ctx.guild.id)
         if player is None or player.current is None:
             await ctx.send(embed=embeds.info("Rien en lecture."))
@@ -383,6 +394,7 @@ class Music(commands.Cog):
 
     @commands.command(name="loop")
     async def loop(self, ctx: commands.Context) -> None:
+        """Active/désactive la boucle sur la piste en cours 🔂."""
         player = self.players.get_existing(ctx.guild.id)
         if player is None:
             await ctx.send(embed=embeds.error("Rien en lecture."))
@@ -395,6 +407,7 @@ class Music(commands.Cog):
 
     @commands.command(name="loopqueue", aliases=["loopq"])
     async def loop_queue(self, ctx: commands.Context) -> None:
+        """Active/désactive la boucle sur toute la queue 🔁."""
         player = self.players.get_existing(ctx.guild.id)
         if player is None:
             await ctx.send(embed=embeds.error("Rien en lecture."))
@@ -407,6 +420,7 @@ class Music(commands.Cog):
 
     @commands.command(name="volume", aliases=["vol"])
     async def volume(self, ctx: commands.Context, value: int) -> None:
+        """Règle le volume du bot de 0 à 100 (défaut : 50)."""
         player = self.players.get_existing(ctx.guild.id)
         if player is None:
             await ctx.send(embed=embeds.error("Pas connecté."))
