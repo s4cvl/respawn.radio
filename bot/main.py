@@ -11,6 +11,7 @@ import discord
 from discord.ext import commands
 from dotenv import load_dotenv
 
+from bot.utils.health import heartbeat_loop, liveness_loop
 from bot.utils.help_command import RespawnHelp
 
 # --- Configuration ---
@@ -107,11 +108,19 @@ async def _main() -> None:
             log.exception("Échec chargement cog %s : %s", cog, exc)
             sys.exit(1)
 
+    # Health tasks (heartbeat fichier + liveness watchdog)
+    health_tasks = [
+        asyncio.create_task(heartbeat_loop(bot), name="heartbeat"),
+        asyncio.create_task(liveness_loop(bot), name="liveness"),
+    ]
+
     try:
         await bot.start(DISCORD_TOKEN)
     except KeyboardInterrupt:
         log.info("Interruption clavier — arrêt.")
     finally:
+        for task in health_tasks:
+            task.cancel()
         if not bot.is_closed():
             await bot.close()
 

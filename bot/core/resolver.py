@@ -42,7 +42,17 @@ YDL_OPTS_BASE = {
 FFMPEG_BEFORE_OPTS = (
     "-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5"
 )
-FFMPEG_OPTS = "-vn"
+
+# Filtres audio :
+#   -vn                : pas de stream vidéo (on est en audio uniquement)
+#   dynaudnorm         : normalisation dynamique du volume — égalise les tracks
+#                        YouTube/Spotify dont les niveaux varient. Tuning :
+#     f=250            : frame de 250ms (défaut 500, plus réactif)
+#     g=15             : fenêtre gaussienne sur 15 frames (défaut 31, plus lisse)
+#     p=0.95           : peak target 95% (défaut, évite le clipping)
+#     m=10             : multiplicateur max (défaut 10, limite le gain en haut)
+# Coût CPU négligeable sur SRV-DEB.
+FFMPEG_OPTS = "-vn -af dynaudnorm=f=250:g=15:p=0.95:m=10"
 
 
 # --- Regex de détection ---
