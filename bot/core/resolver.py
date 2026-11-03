@@ -247,6 +247,7 @@ class Resolver:
             return False
 
         track.stream_url = info.get("url")
+        track.http_headers = info.get("http_headers")
         track.url = info.get("webpage_url") or track.url
         track.duration = info.get("duration") or track.duration
         track.thumbnail = info.get("thumbnail") or track.thumbnail
@@ -289,6 +290,7 @@ class Resolver:
             title=title,
             url=url,
             stream_url=stream_url,
+            http_headers=info.get("http_headers") if stream_url else None,
             duration=info.get("duration"),
             uploader=info.get("uploader") or info.get("channel"),
             thumbnail=info.get("thumbnail"),

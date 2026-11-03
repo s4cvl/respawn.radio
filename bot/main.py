@@ -47,6 +47,7 @@ def build_bot() -> commands.Bot:
     intents.message_content = True  # PRIVILEGED — à activer dans le Dev Portal
     intents.voice_states = True
     intents.guilds = True
+    intents.members = True  # PRIVILEGED — requis pour le chiffrement vocal DAVE
     # Pas besoin de `members` (privileged). Les membres du salon vocal du bot
     # sont remplis via les events voice_state_update.
 

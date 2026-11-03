@@ -1,7 +1,10 @@
+
+
 """GuildPlayer — état d'une session de lecture par guild Discord."""
 
 from __future__ import annotations
 
+import shlex
 import asyncio
 import logging
 import time
@@ -21,6 +24,14 @@ AUTO_LEAVE_DELAY = 5 * 60
 WATCHDOG_INTERVAL = 5.0  # check toutes les 5s si voice_client tourne encore
 
 
+def _before_opts(headers: dict | None) -> str:
+    opts = FFMPEG_BEFORE_OPTS
+    if headers:
+        h = "".join(f"{k}: {v}\r\n" for k, v in headers.items())
+        opts += f" -headers {shlex.quote(h)}"
+    return opts
+
+
 @dataclass(slots=True)
 class Track:
     """Une piste dans la queue."""
@@ -28,6 +39,7 @@ class Track:
     title: str
     url: str
     stream_url: str | None = None
+    http_headers: dict | None = None
     duration: float | None = None
     uploader: str | None = None
     thumbnail: str | None = None
@@ -232,7 +244,7 @@ class GuildPlayer:
                 try:
                     source = discord.FFmpegPCMAudio(
                         next_track.stream_url,
-                        before_options=FFMPEG_BEFORE_OPTS,
+                        before_options=_before_opts(next_track.http_headers),
                         options=FFMPEG_OPTS,
                     )
                     source = discord.PCMVolumeTransformer(source, volume=self.volume)
